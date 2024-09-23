@@ -2,18 +2,19 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-torch.manual_seed(1337)
+
 
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
-max_iters = 3000
+max_iters = 10000
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-# ------------
 
+
+torch.manual_seed(1337)
 
 #Get the data 
 with open(file='./data/input.txt', mode='r',  encoding='utf-8') as f:
@@ -139,6 +140,6 @@ for iter in range(max_iters):
     optimizer.step()
     
     
-    #genration 
-    context = idx = torch.zeros((1, 1), dtype=torch.long)
-    print(decode(m.generate(context, max_new_tokens=100)[0].tolist()))
+#genration 
+context = idx = torch.zeros((1, 1), dtype=torch.long)
+print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
