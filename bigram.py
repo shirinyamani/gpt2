@@ -12,7 +12,7 @@ eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed = 32 #dimension of each of the words 
+n_embed = 32 #dimension of each of the words for the nn.Embedding lookup
 
 
 torch.manual_seed(1337)
