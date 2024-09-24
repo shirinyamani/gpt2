@@ -12,6 +12,7 @@ eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
+n_embed = 32
 
 
 torch.manual_seed(1337)
@@ -75,17 +76,19 @@ torch.manual_seed(1337)
 
 #Bi-gram model 
 class BigramLanguageModel(nn.Module):
-    def __init__(self, vocab_size):
+    def __init__(self):
         """ nn.Embedding is a wrapper
         input: list of indices.
         out: corresponding word embeddings
         """
         super().__init__()
         #wrapper 
-        self.token_embeding_table = nn.Embedding(vocab_size, vocab_size) 
+        self.token_embeding_table = nn.Embedding(vocab_size, n_embed) 
+        self.ln_head = nn.Linear(n_embed, vocab_size)
         
     def forward(self, idx, target=None):
-        logits = self.token_embeding_table(idx) #(B,T, C)
+        token_embed = self.token_embeding_table(idx) #(B,T, C)
+        logits = self.ln_head(token_embed) #(B,T, vocab_size)
         #print(logits.shape)
         if target is None:
             loss = None 
@@ -117,7 +120,7 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx 
     
-model = BigramLanguageModel(vocab_size)
+model = BigramLanguageModel()
 m = model.to(device)
 
 # create a PyTorch optimizer
