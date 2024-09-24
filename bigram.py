@@ -68,12 +68,6 @@ def estimate_loss():
 
 
 #Baseline: bigram 
-import torch
-import torch.nn as nn
-from torch.nn import functional as F
-torch.manual_seed(1337)
-
-
 #Bi-gram model 
 class BigramLanguageModel(nn.Module):
     def __init__(self):
