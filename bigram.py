@@ -7,12 +7,12 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
-max_iters = 10000
+max_iters = 5000
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed = 32
+n_embed = 32 #dimension of each of the words 
 
 
 torch.manual_seed(1337)
@@ -85,6 +85,7 @@ class BigramLanguageModel(nn.Module):
         #wrapper 
         self.token_embeding_table = nn.Embedding(vocab_size, n_embed) 
         self.ln_head = nn.Linear(n_embed, vocab_size)
+        self.positional_embedding = nn.Embedding(block_size, n_embed)
         
     def forward(self, idx, target=None):
         token_embed = self.token_embeding_table(idx) #(B,T, C)
