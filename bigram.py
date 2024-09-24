@@ -7,7 +7,7 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
-max_iters = 5000
+max_iters = 3000
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -84,12 +84,16 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         #wrapper 
         self.token_embeding_table = nn.Embedding(vocab_size, n_embed) 
-        self.ln_head = nn.Linear(n_embed, vocab_size)
-        self.positional_embedding = nn.Embedding(block_size, n_embed)
+        self.position_embedding_table = nn.Embedding(block_size, n_embed) #each position from 0 to blocksize-1
+        self.lm_head = nn.Linear(n_embed, vocab_size)
+
         
     def forward(self, idx, target=None):
+        B ,T = idx.shape
         token_embed = self.token_embeding_table(idx) #(B,T, C)
-        logits = self.ln_head(token_embed) #(B,T, vocab_size)
+        positional_embed = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)thro the embed table
+        x = token_embed + positional_embed #(B,T, C) broadcasted across Batch 
+        logits = self.lm_head(x) #(B,T, vocab_size)
         #print(logits.shape)
         if target is None:
             loss = None 
@@ -111,7 +115,8 @@ class BigramLanguageModel(nn.Module):
         #so the job of generate is to take the (B,T) and extend it to (B, T + 1) in all the time dimensions within the batches
         for _ in range(max_new_tokens):
             #get predictions
-            logits, loss = self(idx)
+            idx_cond = idx[:, -block_size:]
+            logits, loss = self(idx_cond)
             logits = logits[:,-1,:] #becomes (B, C)
             probs = F.softmax(logits, dim=-1) #(B, C)
             #sample from this probs
@@ -131,7 +136,7 @@ for iter in range(max_iters):
         # every once in a while evaluate the loss on train and val sets
     if iter % eval_interval == 0:
         losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(f"step {iter}: train loss {losses['train']:.3f}, val loss {losses['val']:.3f}")
     # get a sample batch 
     x_batch, y_b = get_batch(split='train')
     #forward/backward evaluate the loss
