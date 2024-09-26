@@ -7,7 +7,7 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
-max_iters = 3000
+max_iters = 6000
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -66,7 +66,26 @@ def estimate_loss():
     model.train()
     return out
 
-
+class Head(nn.Module):
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(n_embed, head_size, bias=False) #apply matrix mul
+        self.query = nn.Linear(n_embed, head_size, bias=False)
+        self.value = nn.Linear(n_embed, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+    
+    def forward(self, x):
+        B,T,C = x.shape 
+        k = self.key(x) # B, T, C
+        q = self.query(x) #  B, T, C
+        
+        wei = q @ k.transpose(-2,-1) * C**0.5 # B,T,T
+        wei = wei.masked_fill(self.tril[:T, :T]== 0, float('-inf')) # B,T,T
+        wei = F.softmax(wei, dim=-1) #(B,T,T)
+        v = self.value(x) #b,t,c
+        out = wei @ v # (B,T,T) @ (B,T,C) ==> (B,T,C)
+        return out
+    
 #Baseline: bigram 
 #Bi-gram model 
 class BigramLanguageModel(nn.Module):
@@ -79,7 +98,9 @@ class BigramLanguageModel(nn.Module):
         #wrapper 
         self.token_embeding_table = nn.Embedding(vocab_size, n_embed) 
         self.position_embedding_table = nn.Embedding(block_size, n_embed) #each position from 0 to blocksize-1
+        self.self_attention_head = Head(n_embed)
         self.lm_head = nn.Linear(n_embed, vocab_size)
+  
 
         
     def forward(self, idx, target=None):
@@ -87,6 +108,7 @@ class BigramLanguageModel(nn.Module):
         token_embed = self.token_embeding_table(idx) #(B,T, C)
         positional_embed = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)thro the embed table
         x = token_embed + positional_embed #(B,T, C) broadcasted across Batch 
+        x = self.self_attention_head(x) #apply attention on x (B,T,C)
         logits = self.lm_head(x) #(B,T, vocab_size)
         #print(logits.shape)
         if target is None:
