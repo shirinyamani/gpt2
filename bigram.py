@@ -107,8 +107,6 @@ class BigramLanguageModel(nn.Module):
         self.position_embedding_table = nn.Embedding(block_size, n_embed) #each position from 0 to blocksize-1
         self.mh_attention = MultiHeadAttention(4, n_embed// 4) #32 /4 ==> each head 8 in parallel
         self.lm_head = nn.Linear(n_embed, vocab_size)
-  
-
         
     def forward(self, idx, target=None):
         B ,T = idx.shape
