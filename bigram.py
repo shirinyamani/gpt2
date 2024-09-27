@@ -93,6 +93,19 @@ class MultiHeadAttention(nn.Module):
         
     def forward(self, x):
         return torch.cat([h(x) for h in self.heads],dim=-1) #concat over channel dimension
+    
+    
+    
+class FeedForward(nn.Module):
+    """simple linear layer y = wx + b followed by RelU"""
+    def __init__(self, n_embed):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embed, n_embed),
+            nn.ReLU())
+    def forward(self, x):
+        return self.net(x)
+                    
 #Baseline: bigram 
 #Bi-gram model 
 class BigramLanguageModel(nn.Module):
@@ -106,6 +119,7 @@ class BigramLanguageModel(nn.Module):
         self.token_embeding_table = nn.Embedding(vocab_size, n_embed) 
         self.position_embedding_table = nn.Embedding(block_size, n_embed) #each position from 0 to blocksize-1
         self.mh_attention = MultiHeadAttention(4, n_embed// 4) #32 /4 ==> each head 8 in parallel
+        self.ffwd = FeedForward(n_embed)
         self.lm_head = nn.Linear(n_embed, vocab_size)
         
     def forward(self, idx, target=None):
@@ -114,6 +128,7 @@ class BigramLanguageModel(nn.Module):
         positional_embed = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)thro the embed table
         x = token_embed + positional_embed #(B,T, C) broadcasted across Batch 
         x = self.mh_attention(x) #apply attention on x (B,T,C)
+        x = self.ffwd(x) #(B,T,C)
         logits = self.lm_head(x) #(B,T, vocab_size)
         #print(logits.shape)
         if target is None:
