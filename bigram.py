@@ -7,7 +7,7 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
-max_iters = 6000
+max_iters = 5000
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -115,10 +115,12 @@ class  Block(nn.Module):
         head_size = n_embed // n_head   
         self.sa = MultiHeadAttention(num_heads=n_head, head_size=head_size) #communication
         self.ffwd = FeedForward(n_embed) #computation
-        
+        self.ln1 = nn.LayerNorm(n_embed) #normalize features guassian 0 mean, 1 std
+        self.ln2 = nn.LayerNorm(n_embed)
+
     def forward(self, x):
-        x = x + self.sa(x) #residual connection; we forked off, did some computation and come back to x 
-        x = x + self.ffwd(x)
+        x = x + self.sa(self.ln1(x)) #residual connection; we forked off, did some computation and come back to x 
+        x = x + self.ffwd(self.ln2(x))
         return x              
 #Baseline: bigram 
 #Bi-gram model 
@@ -135,7 +137,9 @@ class BigramLanguageModel(nn.Module):
         self.blocks = nn.Sequential(
             Block(n_embed, n_head=4),
             Block(n_embed, n_head=4),
-            Block(n_embed, n_head=4))
+            Block(n_embed, n_head=4),
+            nn.LayerNorm(n_embed))
+        
         self.mh_attention = MultiHeadAttention(4, n_embed// 4) #32 /4 ==> each head 8 in parallel
         self.ffwd = FeedForward(n_embed)
         self.lm_head = nn.Linear(n_embed, vocab_size)
