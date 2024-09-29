@@ -152,7 +152,7 @@ class BigramLanguageModel(nn.Module):
         self.ln_final = nn.LayerNorm(n_embed) #final layer norm befor the lang model head 
         self.lm_head = nn.Linear(n_embed, vocab_size) 
         self.apply(self._init_weights)
-        
+    #no impact on loss !!!!   
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
