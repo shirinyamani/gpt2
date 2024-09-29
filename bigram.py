@@ -9,7 +9,7 @@ batch_size = 64 # how many independent sequences will we process in parallel?
 block_size = 256 # what is the maximum context length for predictions? 256 tokens get in to predict 257th
 max_iters = 5000
 eval_interval = 500
-learning_rate = 3e-3
+learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 n_embed = 384 #dimension of each of the words for the nn.Embedding lookup 
@@ -18,6 +18,12 @@ n_layer = 6
 dropout = 0.2 #everu forward/backward pass 20% of the intermideiate calculations are disabled n droppend to zero
 torch.manual_seed(1337)
 
+
+if torch.cuda.is_available():
+    print(f"GPU: {torch.cuda.get_device_name(0)} is available.")
+else:
+    print("No GPU available. Training will run on CPU.")
+    
 #Get the data 
 with open(file='./data/input.txt', mode='r',  encoding='utf-8') as f:
     text = f.read()
@@ -81,10 +87,10 @@ class Head(nn.Module):
         k = self.key(x) # B, T, C
         q = self.query(x) #  B, T, C
         
-        wei = q @ k.transpose(-2,-1) * C**0.5 # B,T,T
+        wei = q @ k.transpose(-2,-1) * k.shape[-1]**0.5 # B,T,T
         wei = wei.masked_fill(self.tril[:T, :T]== 0, float('-inf')) # B,T,T
         wei = F.softmax(wei, dim=-1) #(B,T,T)
-        wei = self.dropout(wei)
+        wei = self.dropout(wei) #randomly prevent some nodes to communicate with each other 
         v = self.value(x) #b,t,c
         out = wei @ v # (B,T,T) @ (B,T,C) ==> (B,T,C)
         return out
@@ -93,12 +99,12 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
-        self.proj = nn.Linear(n_embed, n_embed)
+        self.proj = nn.Linear(head_size * num_heads, n_embed)
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads],dim=-1) #concat over channel dimension
-        out = self.proj(out) #projectiion is the linear transformation of the out layer
+        out = self.dropout(self.proj(out)) #projectiion is the linear transformation of the out layer
         return out #projection back to the residual pathway
     
     
@@ -120,7 +126,7 @@ class  Block(nn.Module):
     def __init__(self, n_embed, n_head):
         super().__init__()
         head_size = n_embed // n_head   
-        self.sa = MultiHeadAttention(num_heads=n_head, head_size=head_size) #communication #32 /4 ==> each head 8 in parallel
+        self.sa = MultiHeadAttention(n_head,head_size) #communication #32 /4 ==> each head 8 in parallel
         self.ffwd = FeedForward(n_embed) #computation
         self.ln1 = nn.LayerNorm(n_embed) #normalize features guassian 0 mean, 1 std
         self.ln2 = nn.LayerNorm(n_embed)
@@ -144,8 +150,17 @@ class BigramLanguageModel(nn.Module):
         self.position_embedding_table = nn.Embedding(block_size, n_embed) #each position from 0 to blocksize-1
         self.blocks = nn.Sequential(*[Block(n_embed, n_head=n_head) for _ in range(n_layer)])
         self.ln_final = nn.LayerNorm(n_embed) #final layer norm befor the lang model head 
-        self.lm_head = nn.Linear(n_embed, vocab_size)
-
+        self.lm_head = nn.Linear(n_embed, vocab_size) 
+        self.apply(self._init_weights)
+        
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            
     def forward(self, idx, target=None):
         B ,T = idx.shape
         token_embed = self.token_embeding_table(idx) #(B,T, C)
@@ -194,7 +209,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 for iter in range(max_iters):
         # every once in a while evaluate the loss on train and val sets
-    if iter % eval_interval == 0:
+    if iter % eval_interval == 0 or iter == max_iters -1:
         losses = estimate_loss()
         print(f"step {iter}: train loss {losses['train']:.3f}, val loss {losses['val']:.3f}")
     # get a sample batch 
