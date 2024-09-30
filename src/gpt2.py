@@ -12,6 +12,14 @@ class GPTConfig:
     n_head = 6
     n_embed = 384
 
+class CausalSelfAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        #TODO
+        
+    def forward(self, x):
+        pass
+        
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
