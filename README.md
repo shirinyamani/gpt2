@@ -2,7 +2,7 @@
 
 Reproduction of GPT2 with PyTorch.
 
-![img](https://i.sstatic.net/nV7Ee.jpg)
+![img](./img/image.png)
 
 ## Usage
 
