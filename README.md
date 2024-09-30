@@ -7,5 +7,5 @@ Reproduction of GPT2 with PyTorch.
 ## Usage
 
 ```bash
-python train.py
+python gpt2.py
 ```
