@@ -16,6 +16,8 @@ n_embed = 384 #dimension of each of the words for the nn.Embedding lookup
 n_head = 6 #384/6 = 64 every head takes 64 dimensional
 n_layer = 6
 dropout = 0.2 #everu forward/backward pass 20% of the intermideiate calculations are disabled n droppend to zero
+
+#------------------------
 torch.manual_seed(1337)
 
 
