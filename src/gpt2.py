@@ -134,7 +134,6 @@ class GPT(nn.Module):
                 assert sd_hf[k].shape == sd[k].shape, f'mismatched {sd_hf[k].shape} != {sd[k].shape}'
                 with torch.no_grad():
                     sd[k].copy_(sd_hf[k])
-
         return model
 #=====================
 model = GPT.from_pretrained(model_type='gpt2')
