@@ -5,14 +5,6 @@ from torch.nn import functional as F
 import math
 
 #-------------------------------------
-@dataclass
-class GPTConfig:
-    block_size = 256
-    vocab_size = 65
-    n_layer=6
-    n_head = 6
-    n_embed = 384
-
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -71,7 +63,14 @@ class Block(nn.Module):
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x 
-    
+
+@dataclass
+class GPTConfig:
+    block_size = 256
+    vocab_size = 65
+    n_layer=6
+    n_head = 6
+    n_embed = 384 
 class GPT(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -88,8 +87,3 @@ class GPT(nn.Module):
         #projection from 756 to 507556
         self.lm_head = nn.Linear(config.n_embed, config.vocab_size, bias=False)
         
-
-        
-    
-    
-    
