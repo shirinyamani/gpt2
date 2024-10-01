@@ -66,7 +66,7 @@ class Block(nn.Module):
 
 @dataclass
 class GPTConfig:
-    block_size = 256
+    block_size = 1024 # max_seq len 
     vocab_size = 65
     n_layer=6
     n_head = 6
