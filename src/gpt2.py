@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import math
 
 #-------------------------------------
 @dataclass
@@ -15,11 +16,36 @@ class GPTConfig:
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
-        #TODO
+        assert config.n_embed % config.n_heads == 0
+        #projection of all k/v/q for all heads but in batch dimension
+        self.c_attn = nn.Linear(config.n_embed, 3 * config.n_embed)
+        #output projection
+        self.c_proj = nn.Linear(config.n_embed,config.n_embed)
+        self.n_head = config.n_head
+        self.n_embed = config.n_embed
+        
+        self.register_buffer('bias', torch.tril(torch.ones(config.block_size, config.block_size)).view(1,1, config.block_size,config.block_size))
+        
         
     def forward(self, x):
-        pass
+        B,T,C = x.size()
+        qkv = self.c_attn(x)
+        q,k,v = qkv.split(self.n_embed, dim=2)
         
+        # (B,T,n_heads, C // n_head) => (B, n_heads, T, head_size)
+        k = k.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
+        q = q.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
+        v = v.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
+        
+        att = (q @ k.transpose(-2,-1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = att.masked_filled(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        att = F.softmax(att, dim=-1)
+        
+        y = att @ v #(B, n_heads, T, T) @ (B, n_heads, T, head_size)=> (B, n_heads, T, head_size)
+        y = y.transpose(1,2).contiguous().view(B,T,C) #re-assemble; this is the concat operation
+        #output projection 
+        y = self.c_proj(y)
+        return y
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -57,8 +83,7 @@ class GPT(nn.Module):
             h = nn.ModuleList(list( #index usinh int
                 Block(config) for _ in range(config.n_layer)
                 )),
-            ln_f = nn.LayerNorm(config.n_embed)
-                                         
+            ln_f = nn.LayerNorm(config.n_embed)                                       
         )) 
         #projection from 756 to 507556
         self.lm_head = nn.Linear(config.n_embed, config.vocab_size, bias=False)
