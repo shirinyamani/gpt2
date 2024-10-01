@@ -8,11 +8,11 @@ import math
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
-        assert config.n_embed % config.n_heads == 0
+        assert config.n_embed % config.n_head == 0
         #projection of all k/v/q for all heads but in batch dimension
         self.c_attn = nn.Linear(config.n_embed, 3 * config.n_embed)
         #output projection
-        self.c_proj = nn.Linear(config.n_embed,config.n_embed)
+        self.c_proj = nn.Linear(config.n_embed, config.n_embed)
         self.n_head = config.n_head
         self.n_embed = config.n_embed
         
@@ -28,14 +28,14 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
         q = q.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
         v = v.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
-        
-        att = (q @ k.transpose(-2,-1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_filled(self.bias[:,:,:T,:T] == 0, float('-inf'))
+   
+# manual implementation of attention
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
-        
-        y = att @ v #(B, n_heads, T, T) @ (B, n_heads, T, head_size)=> (B, n_heads, T, head_size)
-        y = y.transpose(1,2).contiguous().view(B,T,C) #re-assemble; this is the concat operation
-        #output projection 
+        att = self.attn_dropout(att)
+        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         y = self.c_proj(y)
         return y
 class MLP(nn.Module):
@@ -66,11 +66,12 @@ class Block(nn.Module):
 
 @dataclass
 class GPTConfig:
-    block_size = 1024 # max_seq len 
-    vocab_size = 50257
-    n_layer=12
-    n_head = 12
-    n_embed = 768 
+    block_size: int = 1024 # max_seq len 
+    vocab_size: int = 50257
+    n_layer: int = 12
+    n_head: int = 12
+    n_embed: int = 768 
+    
 class GPT(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -108,6 +109,33 @@ class GPT(nn.Module):
         model = GPT(config)
         sd = model.state_dict()
         sd_keys = sd.keys()
-        sd_keys = [k for k in sd_keys if not k.endswith('attn.bias')]
-        
-        #load the HF gpt2 model 
+        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
+
+        # init a huggingface/transformers model
+        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+        sd_hf = model_hf.state_dict()
+
+        # copy while ensuring all of the parameters are aligned and match in names and shapes
+        sd_keys_hf = sd_hf.keys()
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
+        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
+        # this means that we have to transpose these weights when we import them
+        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+        for k in sd_keys_hf:
+            if any(k.endswith(w) for w in transposed):
+                # special treatment for the Conv1D weights we need to transpose
+                assert sd_hf[k].shape[::-1] == sd[k].shape
+                with torch.no_grad():
+                    sd[k].copy_(sd_hf[k].t())
+            else:
+                # vanilla copy over the other parameters
+                assert sd_hf[k].shape == sd[k].shape, f'mismatched {sd_hf[k].shape} != {sd[k].shape}'
+                with torch.no_grad():
+                    sd[k].copy_(sd_hf[k])
+
+        return model
+#=====================
+model = GPT.from_pretrained(model_type='gpt2')
+print('didnt crash!')
