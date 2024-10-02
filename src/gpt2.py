@@ -192,3 +192,5 @@ for i in range(num_return_sequences):
     tokens = x[i, :max_length].tolist()
     words = enc.decode(tokens)
     print(">", words)
+    
+#TODO:  1) unsqueeze(), torch.gather(), 2) investigate shape of the idx, ix 
