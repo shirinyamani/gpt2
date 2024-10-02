@@ -75,7 +75,6 @@ class GPT(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        
         self.transformer = nn.ModuleDict(dict( #index using str
             wte = nn.Embedding(config.vocab_size, config.n_embed),
             wpe = nn.Embedding(config.block_size, config.n_embed),
@@ -87,6 +86,19 @@ class GPT(nn.Module):
         #projection from 756 to 507556
         self.lm_head = nn.Linear(config.n_embed, config.vocab_size, bias=False)
         
+    def forward(self, idx):
+        B ,T = idx.size() #(B,T)
+        assert T <= self.config.block_size, f'cannot forward tensor size {T} to block size of {self.config.block_size}'
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device) # (T)
+        pos_emb = self.transformer.wpe(pos) # (T, n_embed)
+        tok_emb = self.transformer.wte(idx) # (B,T,n_embed)
+        x = tok_emb + pos_emb # (B,T,n_embed)
+        for block in self.trnsformer.h:
+            x = block(x)  #(B,T,n_embed)
+        x = self.transformer.ln_f(x) 
+        logits = self.lm_head(x) # (B,T,vocab_size) for the token come next for 
+        return logits
+           
 #------------loading GPT model weights from HF--------
     @classmethod
     def from_pretrained(cls, model_type):
@@ -139,7 +151,12 @@ class GPT(nn.Module):
                 assert sd_hf[k].shape  == sd[k].shape, f'mismatched {sd_hf[k].shape} != {sd[k].shape}'
                 with torch.no_grad():
                     sd[k].copy_(sd_hf[k])
-        return model
+        return model #return gpt object
+
 #=====================
 model = GPT.from_pretrained(model_type='gpt2')
 print(f'Successfully loaded the weights from {model._get_name()}')
+
+model.eval()
+model.to('cuda')
+
