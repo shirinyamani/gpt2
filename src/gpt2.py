@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 
+#check for device
+device = 'cuda' if torch.cuda.is_available() else 'cpu' 
 #-------------------------------------
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
@@ -27,12 +29,11 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
         q = q.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
         v = v.view(B,T, self.n_head, C // self.n_head).transpose(1,2)
-   
 # manual implementation of attention
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
-        att = self.attn_dropout(att)
+        #att = self.attn_dropout(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         y = self.c_proj(y)
@@ -44,7 +45,7 @@ class MLP(nn.Module):
         self.gelu = nn.GELU()
         self.c_proj = nn.Linear(4 * config.n_embed, config.n_embed)
         
-    def forwad(self, x):
+    def forward(self, x):
         x = self.c_fc(x)
         x = self.gelu(x)
         x = self.c_proj(x)
@@ -93,7 +94,7 @@ class GPT(nn.Module):
         pos_emb = self.transformer.wpe(pos) # (T, n_embed)
         tok_emb = self.transformer.wte(idx) # (B,T,n_embed)
         x = tok_emb + pos_emb # (B,T,n_embed)
-        for block in self.trnsformer.h:
+        for block in self.transformer.h:
             x = block(x)  #(B,T,n_embed)
         x = self.transformer.ln_f(x) 
         logits = self.lm_head(x) # (B,T,vocab_size) for the token come next for 
@@ -154,9 +155,40 @@ class GPT(nn.Module):
         return model #return gpt object
 
 #=====================
+num_return_sequences = 5
+max_length = 30
+
+
+
 model = GPT.from_pretrained(model_type='gpt2')
 print(f'Successfully loaded the weights from {model._get_name()}')
 
-model.eval()
-model.to('cuda')
+model.eval() #when you are using the model and not training
+model.to(device)
 
+import tiktoken
+enc = tiktoken.get_encoding("gpt2")
+tokens = enc.encode("Hello I'm a language model,")
+tokens = torch.tensor(tokens, dtype=torch.long, device=device) #(8, )
+tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1) # (5, 8)
+x = tokens.to(device) # (5,8)
+
+torch.manual_seed(42)
+#torch.device.manual_seed(42)
+#generate 
+while x.size(1) < max_length:
+    with torch.no_grad():
+        logits = model(x) #(B,T, vocab_size)
+        logits = logits[:,-1,:] #(B, vocab_size)
+        probs = F.softmax(logits, dim=-1)
+        #according to hf get only top 50 high probs
+        top_kprob, top_kindic = torch.topk(probs, 50, dim=-1)
+        ix = torch.multinomial(top_kprob, 1)
+        xcol = torch.gather(top_kindic, -1, ix)
+        x = torch.cat((x, xcol), dim=1)
+        
+
+for i in range(num_return_sequences):
+    tokens = x[i, :max_length].tolist()
+    words = enc.decode(tokens)
+    print(">", words)
