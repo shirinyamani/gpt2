@@ -84,7 +84,7 @@ class GPT(nn.Module):
         #projection from 756 to 507556
         self.lm_head = nn.Linear(config.n_embed, config.vocab_size, bias=False)
         
-    def forward(self, idx):
+    def forward(self, idx, target=None):
         B ,T = idx.size() #(B,T)
         assert T <= self.config.block_size, f'cannot forward tensor size {T} to block size of {self.config.block_size}'
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device) # (T)
@@ -95,7 +95,13 @@ class GPT(nn.Module):
             x = block(x)  #(B,T,n_embed)
         x = self.transformer.ln_f(x) 
         logits = self.lm_head(x) # (B,T,vocab_size) for the token come next for 
-        return logits
+        loss = None
+        if target is not None:
+            B,T,vocab_size = logits.shape
+            logits = logits.view(B*T, vocab_size)
+            target = target.view(B*T)
+            loss = F.cross_entropy(logits, target)
+        return logits, loss
            
 #------------loading GPT model weights from HF--------
     @classmethod
@@ -151,33 +157,45 @@ class GPT(nn.Module):
                     sd[k].copy_(sd_hf[k])
         return model #return gpt object
 
-#=====================
+#============DEVICE========================
 device = "cpu"
 if torch.cuda.is_available():
     device = "cuda"
 elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
     device = "mps"
 print(f'Device is: {device}')
-#=====================
 
-num_return_sequences = 5
-max_length = 30
+#==============TOKENIZATION==================
+import tiktoken
+enc = tiktoken.get_encoding("gpt2")
+with open('input.txt', 'r') as f:
+    text = f.read()
+    
+text = text[:1000]
+tokens = enc.encode(text)
+B, T = 4, 32
+
+buf = torch.tensor(tokens[:B*T + 1])
+x = buf[:-1].view(B,T)
+y = buf[1:].view(B,T)
+print(f'x shape:{x.shape}, y shape:{y.shape}')
+
+#==============LOAD MODEL=================
 #model = GPT.from_pretrained(model_type='gpt2')
 model = GPT(GPTConfig())
 print(f'Successfully loaded the weights from {model._get_name()}')
-
-model.eval() #when you are using the model and not training
 model.to(device)
+model.eval() #when you are using the model and not training
+logits, loss = model(x, y)
+print(logits.shape)
+print(loss)
+import sys; sys.exit(0)
 
-import tiktoken
-enc = tiktoken.get_encoding("gpt2")
-tokens = enc.encode("Hello I'm a language model,")
-tokens = torch.tensor(tokens, dtype=torch.long, device=device) #(8, )
-tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1) # (5, 8)
-x = tokens.to(device) # (5,8)
-
+#=================GENERATE w/Prefix Token==================
 torch.manual_seed(42)
-#torch.device.manual_seed(42)
+torch.device.manual_seed(42)
+num_return_sequences = 5
+max_length = 30
 #generate 
 while x.size(1) < max_length:
     with torch.no_grad():
