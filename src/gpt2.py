@@ -3,9 +3,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
-
-#check for device
-device = 'cuda' if torch.cuda.is_available() else 'cpu' 
 #-------------------------------------
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
@@ -155,12 +152,18 @@ class GPT(nn.Module):
         return model #return gpt object
 
 #=====================
+device = "cpu"
+if torch.cuda.is_available():
+    device = "cuda"
+elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    device = "mps"
+print(f'Device is: {device}')
+#=====================
+
 num_return_sequences = 5
 max_length = 30
-
-
-
-model = GPT.from_pretrained(model_type='gpt2')
+#model = GPT.from_pretrained(model_type='gpt2')
+model = GPT(GPTConfig())
 print(f'Successfully loaded the weights from {model._get_name()}')
 
 model.eval() #when you are using the model and not training
