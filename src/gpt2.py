@@ -109,7 +109,6 @@ class GPT(nn.Module):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
         print(f'loading weight from {model_type}')
-
         config_args = {
         'gpt2': dict(n_layer=12, n_head=12, n_embed=768),
         'gpt2-medium': dict(n_layer=24, n_head=16, n_embed=1024),
