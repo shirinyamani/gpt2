@@ -176,6 +176,7 @@ tokens = enc.encode(text)
 B, T = 4, 32
 
 buf = torch.tensor(tokens[:B*T + 1])
+buf = buf.to(device)
 x = buf[:-1].view(B,T)
 y = buf[1:].view(B,T)
 print(f'x shape:{x.shape}, y shape:{y.shape}')
@@ -186,12 +187,21 @@ model = GPT(GPTConfig())
 print(f'Successfully loaded the weights from {model._get_name()}')
 model.to(device)
 model.eval() #when you are using the model and not training
-logits, loss = model(x, y)
-print(logits.shape)
-print(loss)
+#logits, loss = model(x, y)
+# print(logits.shape)
+# print(loss)
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+for i in range(50):
+    optimizer.zero_grad()
+    logits, loss = model(x, y)
+    loss.backward()
+    optimizer.step()
+    print(f'for step {i} loss is: {loss}')
+
 import sys; sys.exit(0)
 
-#=================GENERATE w/Prefix Token==================
+#=================GENERATE w /Prefix Token==================
 torch.manual_seed(42)
 torch.device.manual_seed(42)
 num_return_sequences = 5
@@ -207,8 +217,6 @@ while x.size(1) < max_length:
         ix = torch.multinomial(top_kprob, 1)
         xcol = torch.gather(top_kindic, -1, ix)
         x = torch.cat((x, xcol), dim=1)
-        
-
 for i in range(num_return_sequences):
     tokens = x[i, :max_length].tolist()
     words = enc.decode(tokens)

@@ -10,4 +10,4 @@
 #SBATCH --partition=gpu-a100
 # ====================================
 
-python bigram.py
+python gpt2.py
