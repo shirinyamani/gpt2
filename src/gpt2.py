@@ -83,6 +83,8 @@ class GPT(nn.Module):
         #projection from 756 to 507556
         self.lm_head = nn.Linear(config.n_embed, config.vocab_size, bias=False)
         
+        #weight-sharing schema
+        self.transformer.wte.weight = self.lm_head.weight
     def forward(self, idx, target=None):
         B ,T = idx.size() #(B,T)
         assert T <= self.config.block_size, f'cannot forward tensor size {T} to block size of {self.config.block_size}'
