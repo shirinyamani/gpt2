@@ -12,6 +12,8 @@ class CausalSelfAttention(nn.Module):
         self.c_attn = nn.Linear(config.n_embed, 3 * config.n_embed)
         #output projection
         self.c_proj = nn.Linear(config.n_embed, config.n_embed)
+        self.c_proj.GPT_SCALE_INIT = 1
+        #regularization
         self.n_head = config.n_head
         self.n_embed = config.n_embed
         
@@ -40,6 +42,7 @@ class MLP(nn.Module):
         self.c_fc = nn.Linear(config.n_embed, 4 * config.n_embed)
         self.gelu = nn.GELU()
         self.c_proj = nn.Linear(4 * config.n_embed, config.n_embed)
+        self.c_proj.GPT_SCALE_INIT = 1
         
     def forward(self, x):
         x = self.c_fc(x)
@@ -91,12 +94,15 @@ class GPT(nn.Module):
         
     def _init_weights(self, module):
         if self.isinstance(module, nn.Linear): 
-            torch.nn.init.normal_(module.weight, mean=0, std=0.02) #the std 1/sprt(dimension); 1/sqrt(768)
+            std = 0.02
+            if hasattr(module, 'GPT_SCALE_INIT'):
+                std *= (2 * self.config.n_layers)**-0.5 #scale down to compensate the std addition; 2 * bc every layer in out tf has 2 blocks that add the contribution; attn , mlp
+            torch.nn.init.normal_(module.weight, mean=0, std=std) #the std 1/sprt(dimension); 1/sqrt(768)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
                 
         elif self.isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0, std=0.03)
+            torch.nn.init.normal_(module.weight, mean=0, std=0.02)
               
     def forward(self, idx, target=None):
         B ,T = idx.size() #(B,T)
