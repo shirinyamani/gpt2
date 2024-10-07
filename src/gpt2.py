@@ -93,15 +93,14 @@ class GPT(nn.Module):
         self.apply(self._init_weights)
         
     def _init_weights(self, module):
-        if self.isinstance(module, nn.Linear): 
+        if isinstance(module, nn.Linear): 
             std = 0.02
             if hasattr(module, 'GPT_SCALE_INIT'):
-                std *= (2 * self.config.n_layers)**-0.5 #scale down to compensate the std addition; 2 * bc every layer in out tf has 2 blocks that add the contribution; attn , mlp
+                std *= (2 * self.config.n_layer)**-0.5 #scale down to compensate the std addition; 2 * bc every layer in out tf has 2 blocks that add the contribution; attn , mlp
             torch.nn.init.normal_(module.weight, mean=0, std=std) #the std 1/sprt(dimension); 1/sqrt(768)
             if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-                
-        elif self.isinstance(module, nn.Embedding):
+                torch.nn.init.zeros_(module.bias)    
+        elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0, std=0.02)
               
     def forward(self, idx, target=None):
@@ -218,6 +217,11 @@ model.to(device)
 model.eval() #when you are using the model and not training
 print(f'using device: {device}')
 
+#reproducibility
+torch.manual_seed(1337)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(1337)
+    
 train_loader = DataLoaderLite(B=4, T=32)
 
 #Optimize!
