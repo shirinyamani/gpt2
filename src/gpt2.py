@@ -16,8 +16,7 @@ class CausalSelfAttention(nn.Module):
         self.n_embed = config.n_embed
         
         self.register_buffer('bias', torch.tril(torch.ones(config.block_size, config.block_size)).view(1,1, config.block_size,config.block_size))
-        
-        
+         
     def forward(self, x):
         B,T,C = x.size()
         #qkv = self.c_attn(x)
@@ -109,6 +108,7 @@ class GPT(nn.Module):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
         print(f'loading weight from {model_type}')
+
         config_args = {
         'gpt2': dict(n_layer=12, n_head=12, n_embed=768),
         'gpt2-medium': dict(n_layer=24, n_head=16, n_embed=1024),
@@ -162,23 +162,32 @@ if torch.cuda.is_available():
     device = "cuda"
 elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
     device = "mps"
-print(f'Device is: {device}')
 
-#==============TOKENIZATION==================
+#==============TOKENIZATION & DataLoader==================
+#get a batch 
 import tiktoken
-enc = tiktoken.get_encoding("gpt2")
-with open('input.txt', 'r') as f:
-    text = f.read()
-    
-text = text[:1000]
-tokens = enc.encode(text)
-B, T = 4, 32
 
-buf = torch.tensor(tokens[:B*T + 1])
-buf = buf.to(device)
-x = buf[:-1].view(B,T)
-y = buf[1:].view(B,T)
-print(f'x shape:{x.shape}, y shape:{y.shape}')
+class DataLoaderLite:
+    def __init__(self, B, T):
+        self.B = B
+        self.T = T
+        with open('input.txt', 'r') as f:
+            text = f.read()
+        enc = tiktoken.get_encoding('gpt2')
+        self.tokens = torch.tensor(enc.encode(text))
+        print(f'entire file tokenized size of: {len(self.tokens)}')
+        print(f'one epocs is (tokens/(b*t)) batches: {len(self.tokens) // (B*T)}')
+        self.current_position = 0
+        
+    def next_batch(self):
+        B, T = self.B, self.T 
+        buf = self.tokens[self.current_position: self.current_position + B*T+1]
+        x = buf[:-1].view(self.B, self.T) #input
+        y = buf[1:].view(self.B, self.T) #target
+        self.current_position += B * T
+        if self.current_position + (B*T + 1) > len(self.tokens):
+            self.current_position = 0 
+        return x, y
 
 #==============LOAD MODEL=================
 #model = GPT.from_pretrained(model_type='gpt2')
@@ -186,17 +195,20 @@ model = GPT(GPTConfig())
 print(f'Successfully loaded the weights from {model._get_name()}')
 model.to(device)
 model.eval() #when you are using the model and not training
-#logits, loss = model(x, y)
-# print(logits.shape)
-# print(loss)
+print(f'using device: {device}')
 
+train_loader = DataLoaderLite(B=4, T=32)
+
+#Optimize!
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-for i in range(50):
+for i in range(3):
+    x, y = train_loader.next_batch()
+    x, y = x.to(device), y.to(device)
     optimizer.zero_grad()
     logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
-    print(f'for step {i} loss is: {loss}')
+    print(f'for step {i} loss is: {loss.item()}') #float on cpu
 
 import sys; sys.exit(0)
 
