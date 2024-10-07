@@ -85,6 +85,19 @@ class GPT(nn.Module):
         
         #weight-sharing schema
         self.transformer.wte.weight = self.lm_head.weight
+        
+        # inint better wrt gpt2 paper
+        self.apply(self._init_weights)
+        
+    def _init_weights(self, module):
+        if self.isinstance(module, nn.Linear): 
+            torch.nn.init.normal_(module.weight, mean=0, std=0.02) #the std 1/sprt(dimension); 1/sqrt(768)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+                
+        elif self.isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0, std=0.03)
+              
     def forward(self, idx, target=None):
         B ,T = idx.size() #(B,T)
         assert T <= self.config.block_size, f'cannot forward tensor size {T} to block size of {self.config.block_size}'
