@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
+import inspect
 #-------------------------------------
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
@@ -132,7 +133,6 @@ class GPT(nn.Module):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
         print(f'loading weight from {model_type}')
-
         config_args = {
         'gpt2': dict(n_layer=12, n_head=12, n_embed=768),
         'gpt2-medium': dict(n_layer=24, n_head=16, n_embed=1024),
@@ -177,6 +177,34 @@ class GPT(nn.Module):
                 with torch.no_grad():
                     sd[k].copy_(sd_hf[k])
         return model #return gpt object
+    
+    def configure_optimizer(self, weight_decay, lr, device):
+        #1) retreive the params that require grad
+        model_params_dict = {pn:p for pn,p in self.named_parameters()}
+        model_params_dict = {pn:p for pn,p in model_params_dict.items() if p.requires_grad}
+        
+        #2) devide the params by the ones to decay or not to decay based on the dim
+        param_decay = [p for n,p in model_params_dict.items() if p.dim() >= 2]
+        param_no_decay = [p for n,p in model_params_dict.items() if p.dim() < 2]
+        
+        #3) define them in the gp
+        optim_groups = [
+            {'params': param_decay, 'weight_decay': weight_decay},
+            {'params':param_no_decay,'weight_decay': 0.0 }
+        ]
+        
+        #how many of params are we decaying
+        num_decay = sum(p.numel() for p in param_decay) #ya wanna w decay mostly the w in the multipications and in the embedding n not allowing them to be individually too large!
+        num_no_decay = sum(p.numel() for p in param_no_decay) #like biases, scales
+        print(f'num decayed params:{num_decay} with dim >= 2')
+        print(f'num decayed params:{num_no_decay} with dim < 2')
+        
+        #create adamw optim n check if fuzed of it is avail
+        fused_avail = "fused" in inspect.signature(torch.optim.AdamW).parameters
+        used_fused = fused_avail and 'cuda' in device 
+        print(f'used_fused: {used_fused}')
+        optimizer = torch.optim.AdamW(optim_groups, lr=max_lr, betas=(0.9, 0.95), eps=1e-8, fused=True)
+        return optimizer
 
 #============DEVICE========================
 device = "cpu"
@@ -249,7 +277,8 @@ train_loader = DataLoaderLite(B=16, T=1024)
 torch.set_float32_matmul_precision('high') 
 
 #Optimize!
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
+#optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
+optimizer = model.configure_optimizer(weight_decay=0.1, lr=max_lr, device=device)
 for step in range(max_steps):
     t0 = time.time()
     x, y = train_loader.next_batch()
