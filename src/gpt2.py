@@ -324,3 +324,4 @@ for i in range(num_return_sequences):
     print(">", words)
     
 #TODO:  1) unsqueeze(), torch.gather(), 2) investigate shape of the idx, ix 
+#TODO: Grad_accum
