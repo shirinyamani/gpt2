@@ -214,24 +214,43 @@ class DataLoaderLite:
 #==============LOAD MODEL=================
 #model = GPT.from_pretrained(model_type='gpt2')
 import time 
-model = GPT(GPTConfig())
+model = GPT(GPTConfig(vocab_size=50304)) #to be nice num
 #print(f'Successfully loaded the weights from {model._get_name()}')
 model.to(device)
 model.eval() #when you are using the model and not training
 model = torch.compile(model)
 print(f'using device: {device}')
 
+#lr function according to the gpt3 paper
+max_lr = 6e-4
+min_lr = max_lr* 0.1 #10% of the above according to paper 
+warmup_steps = 10
+max_steps = 50
+
+def get_lr(it):
+    if it < warmup_steps:
+        return max_lr* (it+1) / warmup_steps #+1 bc we dont wanna start by 0 lr
+    if it > max_steps:
+        return min_lr
+    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+    return min_lr + coeff * (max_lr - min_lr)
+
+
 #reproducibility
 torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
-    
-train_loader = DataLoaderLite(B=16, T=1024)
 
-torch.set_float32_matmul_precision('high') #mixed precision
+#LOAD DATA IN BATCHES
+train_loader = DataLoaderLite(B=16, T=1024)
+#mixed precision
+torch.set_float32_matmul_precision('high') 
+
 #Optimize!
-optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
-for i in range(50):
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
+for step in range(max_steps):
     t0 = time.time()
     x, y = train_loader.next_batch()
     x, y = x.to(device), y.to(device)
@@ -239,11 +258,18 @@ for i in range(50):
     with torch.autocast(device_type=device, dtype=torch.bfloat16): #mixed precision training 
         logits, loss = model(x, y)
     loss.backward()
+    norm = torch.nn.utils.clip_grad_norm(model.parameters(), 1.0)
+    #set lr t the function
+    lr = get_lr(step)
+    #set lr in pytorch
+    for gp_params in optimizer.param_groups:
+        gp_params['lr'] = lr
+        
     optimizer.step()
     torch.cuda.synchronize() #to force the queue; waiting fir the gpu to fiish the started job
     t1 = time.time()
     throghput = (train_loader.B * train_loader.T) / (t1-t0) #howmany tokens per second we're processing
-    print(f'for step {i} loss is: {loss.item()}, total time: {(t1-t0)*1000:.2f}, total tok/sec {throghput:.2f}') #float on cpu
+    print(f'Step {step} | loss: {loss.item()} | total time: {(t1-t0)*1000:.2f} | norm:{norm:.3f} | lr:{lr:.4e}|  total tok/sec: {throghput:.2f}') #float on cpu
 
 import sys; sys.exit(0)
 
