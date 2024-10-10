@@ -184,7 +184,7 @@ class GPT(nn.Module):
         model_params_dict = {pn:p for pn,p in model_params_dict.items() if p.requires_grad}
         
         #2) devide the params by the ones to decay or not to decay based on the dim
-        param_decay = [p for n,p in model_params_dict.items() if p.dim() >= 2]
+        param_decay = [p for n,p in model_params_dict.items() if p.dim() >= 2] #like weights and embeddings
         param_no_decay = [p for n,p in model_params_dict.items() if p.dim() < 2]
         
         #3) define them in the gp
@@ -238,6 +238,7 @@ class DataLoaderLite:
         if self.current_position + (B*T + 1) > len(self.tokens):
             self.current_position = 0 
         return x, y
+    
 
 #==============LOAD MODEL=================
 #model = GPT.from_pretrained(model_type='gpt2')
@@ -271,8 +272,16 @@ torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
+ #gradient_accumulation: simulate any arbitary batch size with serializing the gradient 
+ultimate_batch_size = 524288 #2**19
+B=16
+T=1024
+assert ultimate_batch_size % (B * T) == 0, "make sure ultimate batch size is dividable by the B*T"
+grad_accum_steps = ultimate_batch_size // (B * T) #forward/backword and all the grad will be += untill we touch the ultimate then single update
+print(f'accum steps serialized: {grad_accum_steps} for the ultimate batch size {ultimate_batch_size}')
+
 #LOAD DATA IN BATCHES
-train_loader = DataLoaderLite(B=16, T=1024)
+train_loader = DataLoaderLite(B=B, T=T)
 #mixed precision
 torch.set_float32_matmul_precision('high') 
 
@@ -281,13 +290,19 @@ torch.set_float32_matmul_precision('high')
 optimizer = model.configure_optimizer(weight_decay=0.1, lr=max_lr, device=device)
 for step in range(max_steps):
     t0 = time.time()
-    x, y = train_loader.next_batch()
-    x, y = x.to(device), y.to(device)
     optimizer.zero_grad()
-    with torch.autocast(device_type=device, dtype=torch.bfloat16): #mixed precision training 
-        logits, loss = model(x, y)
-    loss.backward()
-    norm = torch.nn.utils.clip_grad_norm(model.parameters(), 1.0)
+    #grad accum
+    loss_accum = 0.0
+    for micro_step in range(grad_accum_steps):
+        x, y = train_loader.next_batch()
+        x, y = x.to(device), y.to(device)
+        with torch.autocast(device_type=device, dtype=torch.bfloat16): #mixed precision training 
+            logits, loss = model(x, y)
+        loss = loss / grad_accum_steps
+        loss_accum += loss.detach()
+        loss.backward()
+        
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     #set lr t the function
     lr = get_lr(step)
     #set lr in pytorch
@@ -297,8 +312,8 @@ for step in range(max_steps):
     optimizer.step()
     torch.cuda.synchronize() #to force the queue; waiting fir the gpu to fiish the started job
     t1 = time.time()
-    throghput = (train_loader.B * train_loader.T) / (t1-t0) #howmany tokens per second we're processing
-    print(f'Step {step} | loss: {loss.item()} | total time: {(t1-t0)*1000:.2f} | norm:{norm:.3f} | lr:{lr:.4e}|  total tok/sec: {throghput:.2f}') #float on cpu
+    throghput = (train_loader.B * train_loader.T * grad_accum_steps) / (t1-t0) #howmany tokens per second we're processing
+    print(f'Step {step} | loss: {loss_accum.item()} | total time: {(t1-t0)*1000:.2f} | norm:{norm:.3f} | lr:{lr:.4e}|  total tok/sec: {throghput:.2f}') #float on cpu
 
 import sys; sys.exit(0)
 
