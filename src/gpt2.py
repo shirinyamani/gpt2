@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 import inspect
+import os
 #-------------------------------------
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
@@ -216,18 +217,32 @@ elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
 #==============TOKENIZATION & DataLoader==================
 #get a batch 
 import tiktoken
+import numpy as np
+
+def load_tokens(filename):
+    npt = np.load(filename)
+    npt = npt.astype(np.int32)
+    ptt = torch.tensor(npt, dtype=torch.long)
+    return ptt
 
 class DataLoaderLite:
-    def __init__(self, B, T):
+    def __init__(self, B, T, split):
         self.B = B
         self.T = T
-        with open('input.txt', 'r') as f:
-            text = f.read()
-        enc = tiktoken.get_encoding('gpt2')
-        self.tokens = torch.tensor(enc.encode(text))
-        print(f'entire file tokenized size of: {len(self.tokens)}')
-        print(f'one epocs is (tokens/(b*t)) batches: {len(self.tokens) // (B*T)}')
-        self.current_position = 0
+        assert split in {'train', 'val'}
+        
+        #enumerate on the shards to read the data
+        data_root = "../data/edu_fineweb10B"
+        shards = os.listdir(data_root)
+        shards = sorted(list(s for s in shards if split in s))
+        shards = [os.path.join(data_root, s) for s in shards]
+        self.shards = shards
+        assert len(shards) > 0, "No shards found for {split} split"
+        
+        #read data from shards
+        self.current_shard = 0 #start from the first shard
+        self.tokens = load_tokens(self.shards[self.current_shard])
+        self.current_position = self.B * self.T
         
     def next_batch(self):
         B, T = self.B, self.T 
@@ -235,8 +250,12 @@ class DataLoaderLite:
         x = buf[:-1].view(self.B, self.T) #input
         y = buf[1:].view(self.B, self.T) #target
         self.current_position += B * T
+        
+        #when we run out of token in a single shard
         if self.current_position + (B*T + 1) > len(self.tokens):
-            self.current_position = 0 
+            self.current_shard = (self.current_shard + 1) % len(self.shards)
+            self.tokens = load_tokens(self.shards[self.current_shard])
+            self.current_position = B * T
         return x, y
     
 
@@ -253,8 +272,8 @@ print(f'using device: {device}')
 #lr function according to the gpt3 paper
 max_lr = 6e-4
 min_lr = max_lr* 0.1 #10% of the above according to paper 
-warmup_steps = 10
-max_steps = 50
+warmup_steps = 30
+max_steps = 100
 
 def get_lr(it):
     if it < warmup_steps:
@@ -274,14 +293,15 @@ if torch.cuda.is_available():
 
  #gradient_accumulation: simulate any arbitary batch size with serializing the gradient 
 ultimate_batch_size = 524288 #2**19
-B=16
+B=64
 T=1024
 assert ultimate_batch_size % (B * T) == 0, "make sure ultimate batch size is dividable by the B*T"
 grad_accum_steps = ultimate_batch_size // (B * T) #forward/backword and all the grad will be += untill we touch the ultimate then single update
 print(f'accum steps serialized: {grad_accum_steps} for the ultimate batch size {ultimate_batch_size}')
 
 #LOAD DATA IN BATCHES
-train_loader = DataLoaderLite(B=B, T=T)
+train_loader = DataLoaderLite(B=B, T=T, split='train')
+val_loader = DataLoaderLite(B=B, T=T, split='val')
 #mixed precision
 torch.set_float32_matmul_precision('high') 
 
