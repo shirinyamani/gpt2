@@ -82,7 +82,7 @@ target/
 profile_default/
 ipython_config.py
 
-#ignore
+#ignore data
 data/edu_fineweb10B
 
 # pyenv
