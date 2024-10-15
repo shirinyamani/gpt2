@@ -1,8 +1,8 @@
 # GPT2
 
-Reproduction of GPT2 with PyTorch on Fine Web edu dataset by 🤗.  
+Reproduction of GPT2 124M with PyTorch on Fine Web edu dataset by 🤗.  
 
-![img](./img/image.png)
+<img src="./img/image.png" alt="img" width="600"/>
 
 # Device 
 The model is trained on a single A100 GPU with 40GB memory. Note that if the model does not fit in your GPU memory, you can reduce the batch size or sequence length. Also note that for the purpose of effitient training, try to use "NICE POWERS OF 2" numbers, becuase at core of the GPU design everything is in Tensor Cores manner, which are optimized for 2^n operations.
