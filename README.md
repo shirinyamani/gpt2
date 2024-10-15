@@ -17,19 +17,16 @@ The official [GPT2](https://github.com/openai/gpt-2) code release from OpenAI, s
 # Requirements
 run `pip install -r requirements.txt` to install the required packages.
 
-# Sample Output for max_length=30  📤 
+# Sample Output for max_length=30 in only step=2000 📤 
 ```txt
-> Hello, I'm a language model, and I'm a guy.
-But the idea on all the lines is different that we have a background to be found
+> Hello, I'm a language model, and I'm a very good teacher. If you didn't know how to solve math you can't teach you a better
 
+> Hello, I'm a language model, and I believe what I'm talking about is very important, yet in my own family.
+The problem with our online
 
-> Hello, I'm a language model, and I still can't remember what I want....
-The words used to make the words "The B-man"
+> Hello, I'm a language model, and I've been living a hard while for many years at the same site (my first experience in the past). I
 
-
-> Hello, I'm a language model, and I have a look, one thing, just a picture, and some, some of the other things I've done
-
-> Hello, I'm a language model, and I'm currently planning for a few weeks now, yet, I'm getting some ideas about something, but just really
+> Hello, I'm a language model, and I think she's got a lot more complicated. Of course, I just wanted a system with everything she knows.
 ```
 
 # Usage  📊
