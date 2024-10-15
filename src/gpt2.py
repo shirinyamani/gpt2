@@ -230,7 +230,6 @@ class DataLoaderLite:
         self.B = B
         self.T = T
         assert split in {'train', 'val'}
-        
         #enumerate on the shards to read the data
         data_root = "../data/edu_fineweb10B"
         shards = os.listdir(data_root)
@@ -238,11 +237,17 @@ class DataLoaderLite:
         shards = [os.path.join(data_root, s) for s in shards]
         self.shards = shards
         assert len(shards) > 0, "No shards found for {split} split"
-        
         #read data from shards
         self.current_shard = 0 #start from the first shard
         self.tokens = load_tokens(self.shards[self.current_shard])
         self.current_position = self.B * self.T
+        self.reset()
+        
+    def reset(self):
+        B, T = self.B, self.T 
+        self.current_shard = 0
+        self.tokens = load_tokens(self.shards[self.current_shard])
+        self.current_position = B * T  
         
     def next_batch(self):
         B, T = self.B, self.T 
@@ -250,7 +255,6 @@ class DataLoaderLite:
         x = buf[:-1].view(self.B, self.T) #input
         y = buf[1:].view(self.B, self.T) #target
         self.current_position += B * T
-        
         #when we run out of token in a single shard
         if self.current_position + (B*T + 1) > len(self.tokens):
             self.current_shard = (self.current_shard + 1) % len(self.shards)
@@ -265,15 +269,14 @@ import time
 model = GPT(GPTConfig(vocab_size=50304)) #to be nice num
 #print(f'Successfully loaded the weights from {model._get_name()}')
 model.to(device)
-model.eval() #when you are using the model and not training
 model = torch.compile(model)
 print(f'using device: {device}')
 
 #lr function according to the gpt3 paper
 max_lr = 6e-4
 min_lr = max_lr* 0.1 #10% of the above according to paper 
-warmup_steps = 30
-max_steps = 100
+warmup_steps = 100
+max_steps = 2000
 
 def get_lr(it):
     if it < warmup_steps:
@@ -308,8 +311,57 @@ torch.set_float32_matmul_precision('high')
 #Optimize!
 #optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8)
 optimizer = model.configure_optimizer(weight_decay=0.1, lr=max_lr, device=device)
+
+#For inference/validation 
 for step in range(max_steps):
     t0 = time.time()
+    last_step = (step == max_steps -1)
+    if (step > 0 and step % 100 == 0) or last_step: #once in a while eval the model 
+        model.eval()
+        val_loader.reset()
+        with torch.no_grad():
+            val_loss_accum = 0.0
+            val_loss_steps = 20
+            for _ in range(val_loss_steps):
+                x, y = val_loader.next_batch()
+                x, y = x.to(device), y.to(device)
+                with torch.autocast(device_type=device, dtype=torch.bfloat16): #mixed precision training 
+                    logits, loss = model(x, y)
+                loss = loss / val_loss_steps
+                val_loss_accum += loss.detach()
+            print(f'validation loss is {val_loss_accum.item():.3f}')
+    
+    #Once in a while generate from the model 
+    if (step > 0 and step % 100 == 0) or last_step:
+        model.eval()
+        num_return_sequences = 4
+        max_length = 32
+        enc = tiktoken.get_encoding('gpt2')
+        tokens= enc.encode("Hello, I'm a language model, and I")
+        tokens = torch.tensor(tokens, dtype=torch.long)
+        tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
+        xgen = tokens.to(device)
+        sample_rng = torch.Generator(device=device)
+        sample_rng.manual_seed(42)
+        #generate 
+        while xgen.size(1) < max_length:
+            with torch.no_grad():
+                with torch.autocast(device, dtype=torch.bfloat16):
+                    logits, loss = model(xgen) #(B,T, vocab_size)
+                logits = logits[:,-1,:] #(B, vocab_size)
+                probs = F.softmax(logits, dim=-1)
+                #according to hf get only top 50 high probs
+                top_kprob, top_kindic = torch.topk(probs, 50, dim=-1)
+                ix = torch.multinomial(top_kprob, 1, generator=sample_rng)
+                xcol = torch.gather(top_kindic, -1, ix)
+                xgen = torch.cat((xgen, xcol), dim=1)
+        for i in range(num_return_sequences):
+            tokens = xgen[i, :max_length].tolist()
+            words = enc.decode(tokens)
+            print(">", words)
+
+#for Training
+    model.train()
     optimizer.zero_grad()
     #grad accum
     loss_accum = 0.0
