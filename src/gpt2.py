@@ -316,6 +316,8 @@ optimizer = model.configure_optimizer(weight_decay=0.1, lr=max_lr, device=device
 for step in range(max_steps):
     t0 = time.time()
     last_step = (step == max_steps -1)
+    
+    #Once in a while (every 100 steps) evaluate the model
     if (step > 0 and step % 100 == 0) or last_step: #once in a while eval the model 
         model.eval()
         val_loader.reset()
@@ -329,7 +331,7 @@ for step in range(max_steps):
                     logits, loss = model(x, y)
                 loss = loss / val_loss_steps
                 val_loss_accum += loss.detach()
-            print(f'validation loss is {val_loss_accum.item():.3f}')
+            print(f'Step {step} | loss: {val_loss_accum.item():.4f}')
     
     #Once in a while generate from the model 
     if (step > 0 and step % 100 == 0) or last_step:
@@ -343,7 +345,7 @@ for step in range(max_steps):
         xgen = tokens.to(device)
         sample_rng = torch.Generator(device=device)
         sample_rng.manual_seed(42)
-        #generate 
+        #GENERATE w /Prefix Token
         while xgen.size(1) < max_length:
             with torch.no_grad():
                 with torch.autocast(device, dtype=torch.bfloat16):
@@ -352,8 +354,8 @@ for step in range(max_steps):
                 probs = F.softmax(logits, dim=-1)
                 #according to hf get only top 50 high probs
                 top_kprob, top_kindic = torch.topk(probs, 50, dim=-1)
-                ix = torch.multinomial(top_kprob, 1, generator=sample_rng)
-                xcol = torch.gather(top_kindic, -1, ix)
+                ix = torch.multinomial(top_kprob, 1, generator=sample_rng) # (B, 1)
+                xcol = torch.gather(top_kindic, -1, ix) # (B, 1)
                 xgen = torch.cat((xgen, xcol), dim=1)
         for i in range(num_return_sequences):
             tokens = xgen[i, :max_length].tolist()
@@ -385,10 +387,8 @@ for step in range(max_steps):
     torch.cuda.synchronize() #to force the queue; waiting fir the gpu to fiish the started job
     t1 = time.time()
     throghput = (train_loader.B * train_loader.T * grad_accum_steps) / (t1-t0) #howmany tokens per second we're processing
-    print(f'Step {step} | loss: {loss_accum.item()} | total time: {(t1-t0)*1000:.2f} | norm:{norm:.3f} | lr:{lr:.4e}|  total tok/sec: {throghput:.2f}') #float on cpu
+    print(f'Step {step} | loss: {loss_accum.item():.4f} | total time: {(t1-t0)*1000:.2f} | norm:{norm:.3f} | lr:{lr:.4e}|  total tok/sec: {throghput:.2f}') #float on cpu
 
 import sys; sys.exit(0)
-
-#=================GENERATE w /Prefix Token==================
 
 #TODO:  1) unsqueeze(), torch.gather(), 2) investigate shape of the idx, ix 
