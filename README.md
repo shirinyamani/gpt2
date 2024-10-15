@@ -1,8 +1,11 @@
 # GPT2
 
-Reproduction of GPT2 with PyTorch on Fine Web edu dataset by 🤗. 
+Reproduction of GPT2 with PyTorch on Fine Web edu dataset by 🤗.  
 
 ![img](./img/image.png)
+
+# Device 
+The model is trained on a single A100 GPU with 40GB memory. Note that if the model does not fit in your GPU memory, you can reduce the batch size or sequence length. Also note that for the purpose of effitient training, try to use "NICE POWERS OF 2" numbers, becuase at core of the GPU design everything is in Tensor Cores manner, which are optimized for 2^n operations.
 
 # Reference 
 The official GPT2 code release from OpenAI, supposed to be our reference, however the code is in TensorFlow and the dataset is not available. Therefore, instead of using the official code, we use the 🤗 Transformers library to reproduce the GPT2 model to have confidence that we are implementing correctly!
