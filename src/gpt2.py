@@ -391,4 +391,4 @@ for step in range(max_steps):
 
 import sys; sys.exit(0)
 
-#TODO:  1) unsqueeze(), torch.gather(), 2) investigate shape of the idx, ix 
+#TODO:  1) torch.gather(), 2) investigate shape of the idx, ix 
