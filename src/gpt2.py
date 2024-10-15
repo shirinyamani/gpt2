@@ -390,25 +390,5 @@ for step in range(max_steps):
 import sys; sys.exit(0)
 
 #=================GENERATE w /Prefix Token==================
-torch.manual_seed(42)
-torch.device.manual_seed(42)
-num_return_sequences = 5
-max_length = 30
-#generate 
-while x.size(1) < max_length:
-    with torch.no_grad():
-        logits = model(x) #(B,T, vocab_size)
-        logits = logits[:,-1,:] #(B, vocab_size)
-        probs = F.softmax(logits, dim=-1)
-        #according to hf get only top 50 high probs
-        top_kprob, top_kindic = torch.topk(probs, 50, dim=-1)
-        ix = torch.multinomial(top_kprob, 1)
-        xcol = torch.gather(top_kindic, -1, ix)
-        x = torch.cat((x, xcol), dim=1)
-for i in range(num_return_sequences):
-    tokens = x[i, :max_length].tolist()
-    words = enc.decode(tokens)
-    print(">", words)
-    
+
 #TODO:  1) unsqueeze(), torch.gather(), 2) investigate shape of the idx, ix 
-#TODO: 1) VALIDATION + 2) GENERATION 
