@@ -22,7 +22,7 @@ run `pip install -r requirements.txt` to install the required packages.
 python src/gpt2.py
 ```
 
-# Sample Output for max_length=30 in only step=2000 📤 
+# Sample Output  📤 
 ```txt
 > Hello, I'm a language model, and I'm a very good teacher. If you didn't know how to solve math you can't teach you a better
 
